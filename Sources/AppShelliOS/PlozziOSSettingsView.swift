@@ -1422,7 +1422,7 @@ private struct PlozziOSSettingsSearchDestination: View {
         switch entry.destinationPage(on: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet) {
         case .playback: profilePage(.playback)
         case .playbackAdvanced:
-            PlaybackAdvancedSettingsView()
+            PlaybackAdvancedSettingsView(playback: appModel.settings.playback)
         case .streamingAdvanced:
             if appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
                 $0.provider is any StreamingQualityProviding
@@ -2633,6 +2633,8 @@ struct PlozziOSPlaybackSettingsView: View {
             SettingsSectionGroup("Audio") {
                 LosslessAudioControl()
                     .settingsSearchAnchor("lossless-audio")
+                SpatialAudioControl(isOn: $model.settings.trueHDAtmosEnabled)
+                    .settingsSearchAnchor("spatial-audio")
                 SettingsDescribedControl {
                     Toggle("Identify songs", isOn: $model.settings.identifySongs)
                 } description: {
@@ -2640,7 +2642,7 @@ struct PlozziOSPlaybackSettingsView: View {
                 }
                 .settingsSearchAnchor("identify-songs")
             }
-            .settingsSearchGroup(["lossless-audio", "identify-songs"])
+            .settingsSearchGroup(["lossless-audio", "spatial-audio", "identify-songs"])
             if AppReleaseChannel.current.isBeta {
                 SettingsSectionGroup("Video") {
                     SettingsDescribedControl {
@@ -2680,7 +2682,7 @@ struct PlozziOSPlaybackSettingsView: View {
             PlozziOSAdvancedStreamingSettings(settings: $model.settings.streaming, support: streamingSupport)
         }
         .navigationDestination(isPresented: $showsAdvancedPlayback) {
-            PlaybackAdvancedSettingsView()
+            PlaybackAdvancedSettingsView(playback: model)
         }
     }
 

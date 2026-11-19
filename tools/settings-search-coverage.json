@@ -216,6 +216,8 @@
     "Sources/FeatureSettings/SettingsSplitLayout.swift",
     "Sources/FeatureSettings/SettingsView.swift",
     "Sources/FeatureSettings/SkipMarkerSettingsControl.swift",
+    "Sources/FeatureSettings/SpatialAudioControl.swift",
+    "Sources/FeatureSettings/SpatialAudioLayoutControl.swift",
     "Sources/FeatureSettings/ThemeMusicVolumeControl.swift",
     "Sources/FeatureSettings/TopShelfSettingsView.swift",
     "Sources/FeatureSettings/TopShelfStylePicker.swift",
@@ -249,6 +251,7 @@
     "SettingsSegmentedPicker",
     "SettingsStepper",
     "SettingsSwitchButton",
+    "SpatialAudioControl",
     "StreamingQualityPicker",
     "ViewCustomizationMenu",
     "ViewCustomizationRow",
@@ -339,6 +342,13 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/LosslessAudioControl.swift|LosslessAudioControl|body|Toggle|<dynamic>": 1
+      }
+    },
+    "SpatialAudioControl": {
+      "kind": "input",
+      "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
+      "controls": {
+        "Sources/FeatureSettings/SpatialAudioControl.swift|SpatialAudioControl|body|Toggle|\"Spatial audio (height channel support)\"": 1
       }
     },
     "StreamingQualityPicker": {

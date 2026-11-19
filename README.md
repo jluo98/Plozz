@@ -96,12 +96,17 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 | **HDR** | HDR10, HDR10+ and HLG. |
 | **Dolby Vision** | Profiles 5, 8.1, 8.4 and AV1 10.1 on compatible devices and displays. AV1 profiles 10.0 and 10.4 also need built-in AV1 support in your device's chip. |
 
-Profile 7 (MEL/FEL) plays as HDR10; profiles 8.2 and AV1 10.2 play as SDR.
+Profile 7 MEL converts to Dolby Vision Profile 8.1 where supported, while
+experimental Profile 7 FEL dual-layer playback is opt-in under Playback > Advanced;
+profiles 8.2 and AV1 10.2 play as SDR.
 Without that chip support, AV1 10.4 plays as HLG instead of Dolby Vision,
 and 10.0 won't play correctly.
 
-Your file, device, display and speakers all affect playback. TrueHD and DTS-HD MA
-play as regular surround audio, not height channels or bitstream passthrough.
+Your file, device, display and speakers all affect playback. Optional spatial
+audio conversion adds overhead sound from supported TrueHD Atmos and DTS:X
+tracks on tvOS and iOS/iPadOS 26+ with compatible equipment; other paths retain
+compatible channel playback. Dolby Digital Plus Atmos keeps its native playback
+path. [Compatibility details](docs/playback-engines.md#spatial-audio).
 Some formats need more processing power; server conversion can change picture
 and sound quality. [Format details and limits](https://plozz.app/formats/).
 

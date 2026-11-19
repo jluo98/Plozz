@@ -493,6 +493,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private let readAheadPreference: @MainActor () -> PlaybackReadAhead
     private let liveBufferPreference: @MainActor () -> LivePlaybackBuffer
     private let losslessAudioPreference: @MainActor () -> Bool
+    private let spatialAudioLayoutPreference: @MainActor () -> SpatialAudioLayout
     private let videoUpscalingPreference: @MainActor () -> VideoUpscaling
     private var liveOutputPolicy = LiveChannelOutputPolicy()
     private var outputPolicyReload: Task<Void, Never>?
@@ -545,6 +546,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         readAheadPreference: @escaping @MainActor () -> PlaybackReadAhead = { .default },
         liveBufferPreference: @escaping @MainActor () -> LivePlaybackBuffer = { .default },
         losslessAudioPreference: @escaping @MainActor () -> Bool = { LosslessAudioSettingsStore().load() },
+        spatialAudioLayoutPreference: @escaping @MainActor () -> SpatialAudioLayout = { SpatialAudioLayoutStore().load() },
         videoUpscalingPreference: @escaping @MainActor () -> VideoUpscaling = { .off }
     ) throws {
         self.engine = try AEEngine()
@@ -558,6 +560,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         self.readAheadPreference = readAheadPreference
         self.liveBufferPreference = liveBufferPreference
         self.losslessAudioPreference = losslessAudioPreference
+        self.spatialAudioLayoutPreference = spatialAudioLayoutPreference
         self.videoUpscalingPreference = videoUpscalingPreference
         #if canImport(UIKit)
         let surface = AetherPlayerView()
@@ -1156,7 +1159,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     nonisolated static func supportsFELConversion(for request: PlaybackRequest) -> Bool {
-        !request.suppressOrdinaryWatchReporting && request.externalAudioURL == nil
+        !request.dolbyVisionFELEnabled && !request.suppressOrdinaryWatchReporting && request.externalAudioURL == nil
             && request.discPlayback != .openMenu
     }
 
@@ -1174,6 +1177,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
         let options = Self.onDemandLoadOptions(
             losslessAudioEnabled: losslessAudioPreference(),
+            trueHDAtmosEnabled: request.trueHDAtmosEnabled,
+            spatialAudioLayout: spatialAudioLayoutPreference(),
+            dolbyVisionFELEnabled: request.dolbyVisionFELEnabled,
             dolbyVisionFELConversion: request.dolbyVisionFELConversion
                 && Self.supportsFELConversion(for: request),
             videoUpscaling: request.discPlayback == .openMenu || request.externalAudioURL != nil
@@ -1189,6 +1195,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     nonisolated static func onDemandLoadOptions(
         losslessAudioEnabled: Bool = LosslessAudioSettingsStore.defaultEnabled,
+        trueHDAtmosEnabled: Bool = PlaybackSettings.default.trueHDAtmosEnabled,
+        spatialAudioLayout: SpatialAudioLayout = .default,
+        dolbyVisionFELEnabled: Bool = PlaybackSettings.default.dolbyVisionFELEnabled,
         dolbyVisionFELConversion: Bool = false,
         videoUpscaling: VideoUpscaling = .default,
         outputPolicy: LiveChannelOutputPolicy = .init(),
@@ -1199,11 +1208,16 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat
         )
         options.objectAudioRendering = .off
-        options.preferDualLayerDolbyVision = false
-        let convertsFEL = dolbyVisionFELConversion && AppReleaseChannel.current.isBeta
+        let prefersDualLayer = dolbyVisionFELEnabled
+            && outputPolicy.isAudible && !outputPolicy.sharesAudioSession
+            && !outputPolicy.suppressesDisplayMatching
+        options.preferDualLayerDolbyVision = prefersDualLayer
+        let convertsFEL = !prefersDualLayer && dolbyVisionFELConversion && AppReleaseChannel.current.isBeta
             && AEEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn
         options.foldsDolbyVisionFEL = convertsFEL
-        options.dolbyVisionHandling = convertsFEL ? .profile7KnownLayers : .profile7MELOnly
+        options.dolbyVisionHandling = prefersDualLayer
+            ? .automatic
+            : (convertsFEL ? .profile7KnownLayers : .profile7MELOnly)
         applyVideoUpscaling(videoUpscaling, to: &options)
         // Aether uses approximately four-second segments and clamps the maximum
         // to 2,700, retaining its free-space budget and producer backpressure.
@@ -1217,8 +1231,26 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // Explicit durations may exceed the automatic 2 GiB cap. The engine still
         // clamps this request to its available-space limit and shared retention ledger.
         options.sessionCacheByteBudget = readAhead == .automatic ? nil : Int.max
+        #if os(tvOS) || os(iOS)
+        if #available(tvOS 26.0, iOS 26.0, *), trueHDAtmosEnabled,
+           outputPolicy.isAudible, !outputPolicy.sharesAudioSession {
+            // This is the rendering bed, not detected speakers. Aether chooses PCM
+            // or APAC for the route and retains its source/channel fallback.
+            options.objectAudioRendering = .render(spatialSpeakerLayout(spatialAudioLayout))
+        }
+        #endif
         applyLiveOutputPolicy(outputPolicy, to: &options)
         return options
+    }
+
+    nonisolated static func spatialSpeakerLayout(_ layout: SpatialAudioLayout) -> SpatialSpeakerLayout {
+        switch layout {
+        case .fiveOneTwo: .l512
+        case .fiveOneFour: .l514
+        case .sevenOneTwo: .l712
+        case .sevenOneFour: .l714
+        case .nineOneSix: .l916
+        }
     }
 
     func liveLoadOptions(

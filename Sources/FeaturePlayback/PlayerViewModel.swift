@@ -2166,6 +2166,8 @@ public final class PlayerViewModel {
         endTemporarySpeedBoost()
         stopSongWatch()
         var request = request
+        request.trueHDAtmosEnabled = playbackSettings.trueHDAtmosEnabled
+        request.dolbyVisionFELEnabled = playbackSettings.dolbyVisionFELEnabled
         request.dolbyVisionFELConversion = dolbyVisionFELOverride ?? playbackSettings.dolbyVisionFELConversion
         cancelVideoUpscalingChange()
         request.videoUpscaling = videoUpscalingOverride ?? playbackSettings.videoUpscaling
