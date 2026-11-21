@@ -63,6 +63,12 @@ struct PlayerActions {
 /// `PlayerActions` closures, so any engine (AVPlayer or Plozzigen)
 /// reuses it without change.
 struct CustomPlayerContainer: UIViewControllerRepresentable {
+    @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    private var autoHideMode: PlaybackControlsAutoHide {
+        voiceOver || switchControl ? .never : playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
+    }
     let engine: any VideoEngine
     let model: PlayerControlsModel
     let subtitleModel: LiveSubtitleModel
@@ -104,6 +110,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
             engine: engine, model: model, actions: actions, fitsInsideSafeArea: fitsInsideSafeArea
         )
         if showsSharedControls {
+            controller.autoHideMode = autoHideMode
             controller.configureScrubPreview(
                 scrubPreview,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
@@ -120,7 +127,12 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PlayerInputViewController, context: Context) {
         controller.actions = actions
+        if showsSharedControls { controller.autoHideMode = autoHideMode }
         controller.fitsInsideSafeArea = fitsInsideSafeArea
+    }
+
+    static func dismantleUIViewController(_ controller: PlayerInputViewController, coordinator: ()) {
+        controller.stopSubtitleClock()
     }
 }
 
@@ -259,6 +271,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
 
     private var autoHideTask: Task<Void, Never>?
+    var autoHideMode = PlaybackSettings.default.controlsAutoHide {
+        didSet {
+            if oldValue != autoHideMode, model.controlsVisible { scheduleAutoHide() }
+        }
+    }
     private var refreshTask: Task<Void, Never>?
     private var skipHintTask: Task<Void, Never>?
     private var scanTask: Task<Void, Never>?
@@ -359,6 +376,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// until the view model loads a cue stream into `subtitleModel`.
     private var subtitleOverlayHost: UIHostingController<LiveSubtitleOverlay>?
     private var subtitleModel: LiveSubtitleModel?
+    private let scheduledArtwork = ScheduledASSArtworkView()
+    private var hasArtworkSink = false
     /// Drives the subtitle timeline off the engine clock every frame. The model
     /// only republishes on cue-boundary crossings, so this stays cheap.
     private var subtitleClock: CADisplayLink?
@@ -423,6 +442,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 #endif
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSubtitleClock()
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         refreshTask?.cancel()
@@ -432,8 +456,6 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         cancelScrubCommit()
         resetSwipePreviewCadence()
         if ScrubDiagnostics.forceScrubRefresh { engine.setScrubRefreshBoost(false) }
-        subtitleClock?.invalidate()
-        subtitleClock = nil
         #if !os(iOS)
         // Leaving playback: let the screensaver / Apple TV sleep resume.
         idleSleepGuard.allowSleep()
@@ -520,7 +542,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// display-link then drives the cue timeline off the engine clock.
     func attachSubtitleOverlay(_ model: LiveSubtitleModel) {
         subtitleModel = model
-        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: self.model))
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(
+            model: model, controls: self.model, scheduledArtwork: scheduledArtwork
+        ))
         host.view.backgroundColor = .clear
         host.view.isUserInteractionEnabled = false
         host.view.frame = view.bounds
@@ -562,12 +586,38 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         subtitleClock = link
     }
 
+    fileprivate func stopSubtitleClock() {
+        subtitleClock?.invalidate()
+        subtitleClock = nil
+        setArtworkSinkEnabled(false)
+        _ = engine.updateFrameSubtitlePresentation(eligible: false, offset: 0)
+        subtitleModel?.primaryInVideoFrame = false
+    }
+
+    private func setArtworkSinkEnabled(_ enabled: Bool) {
+        guard hasArtworkSink != enabled else { return }
+        hasArtworkSink = enabled
+        engine.setScheduledASSArtworkSink(enabled ? scheduledArtwork : nil)
+        if !enabled { scheduledArtwork.reset() }
+    }
+
     @objc private func tickSubtitleClock() {
         updateSubtitleVideoRect()
-        if let subtitleModel, subtitleModel.hasContent {
-            engine.renderSubtitles(at: engine.subtitlePresentationTime - subtitleModel.offset, style: subtitleModel.style)
+        setArtworkSinkEnabled(subtitleModel?.permitsScheduledASSArtwork == true)
+        if let subtitleModel {
+            let style = subtitleModel.style
+            let eligible = subtitleModel.permitsScheduledASSArtwork && !subtitleModel.isHDR && !subtitleModel.hasSecondaryTrack
+                && style.permitsFrameSubtitle && subtitleModel.offset == 0 && model.videoZoom.settings.mode == .fit
+                && (!style.avoidsPlayerControls || model.subtitleLayout.frames.isEmpty)
+            let owns = engine.updateFrameSubtitlePresentation(eligible: eligible, offset: subtitleModel.offset)
+            if owns != subtitleModel.primaryInVideoFrame { subtitleModel.primaryInVideoFrame = owns }
         }
-        subtitleModel?.tick(engine.subtitlePresentationTime)
+        let time = engine.subtitlePresentationTime
+        if let subtitleModel, subtitleModel.hasContent {
+            engine.renderSubtitles(at: time, offset: subtitleModel.offset, style: subtitleModel.style)
+        }
+        scheduledArtwork.pruneElapsedFrames()
+        subtitleModel?.tick(time)
     }
 
     /// Hosts the combined transport + focusable control bar. It stays attached
@@ -1629,6 +1679,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     private func scheduleAutoHide() {
         cancelAutoHide()
+        guard autoHideMode.allowsHiding(paused: model.intendsPause) else { return }
         autoHideTask = Task { [weak self] in
             // Anchor the idle countdown to the playhead ACTUALLY ADVANCING, not to
             // the reveal request, the engine's .ready status, or a single
@@ -1651,6 +1702,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 var lastTime: TimeInterval = -1
                 var advancingTicks = 0
                 while !Task.isCancelled {
+                    if self?.model.intendsPause == true { return true }
                     guard let sample = self.map({ ($0.engine.preventsDisplaySleep, $0.engine.currentTime) })
                     else { return false } // container torn down
                     let (playing, now) = sample
@@ -1690,16 +1742,18 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 // A re-resolve / transcode reload dropped frames mid-window:
                 // re-anchor to the re-presented playback rather than hiding over
                 // a spinner. Checked weakly so a torn-down container isn't held.
-                if self?.engine.preventsDisplaySleep == false, self?.engine.status == .loading {
+                if self?.model.intendsPause == false, self?.engine.preventsDisplaySleep == false, self?.engine.status == .loading {
                     guard await awaitPlaybackPresenting() else { return }
                     continue
                 }
                 guard let self, !Task.isCancelled else { return }
+                guard !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isSwitchControlRunning else { return }
                 switch ControlsAutoHidePolicy.outcome(
                     focus: self.focusContext.policyFocus,
                     isScrubbing: self.model.isScrubbing,
-                    isPaused: self.model.isPaused,
-                    isPanelOpen: self.model.isPanelOpen
+                    isPaused: self.model.isPaused || self.model.intendsPause,
+                    isPanelOpen: self.model.isPanelOpen,
+                    mode: self.autoHideMode
                 ) {
                 case .stayVisible:
                     // Mid-interaction (scrub in flight, paused, or a menu open);

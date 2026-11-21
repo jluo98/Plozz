@@ -380,7 +380,7 @@ public enum SettingsSearchCatalog {
     }
 
     public static let entries: [SettingsSearchEntry] = baseEntries + baseEntries.filter {
-        $0.page == .subtitleStyle && $0.subtitlePage != .dual
+        $0.page == .subtitleStyle && $0.subtitlePage != .dual && $0.id != "file-ass-override"
     }.map { entry in
         SettingsSearchEntry(
             "live-\(entry.id)", page: .liveSubtitleStyle, title: entry.title, keywords: entry.keywords,
@@ -412,6 +412,8 @@ public enum SettingsSearchCatalog {
               keywords: "rewind jump back seconds interval backward skip steps"),
         .init("skip-forward", page: .playback, title: "Skip forward",
               keywords: "fast forward jump ahead seconds interval forward skip steps"),
+        .init("auto-hide-controls", page: .playback, title: "Auto-hide controls",
+              keywords: "hide player controls fade keep visible while playing paused"),
         .init("version-selection", page: .playback, title: "Version selection",
               keywords: "choose select version edition video file quality ask automatically multiple versions"),
         .init("remember-series-version", page: .playback, title: "Remember series version choices",

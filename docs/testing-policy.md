@@ -418,7 +418,9 @@ build lease through remaining delivery and retain exact artifacts as usual.
 
 For hosted UI speed, replace setup sleeps only with observable readiness.
 `waitForHostedLayout` bounds waits for stable layer geometry and completed
-animations in static library/multiview matrices. Keep loading/shimmer waits and
+animations in static library/multiview matrices. Stable geometry does not mean
+tvOS has assigned focus: the PIN keypad fixture waits for native focus inside
+its host before settling the layout and capturing each appearance. Keep loading/shimmer waits and
 negative focus-observation windows intact; continuously animated fixtures are
 not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
 must remain unchanged. Record actual timings rather than assuming a shorter
@@ -550,9 +552,14 @@ On iOS, Settings can be hidden from the tab bar because page-header controls
 remain available. The default tvOS policy still keeps Settings visible.
 `NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
 last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
-On iPhone and compact iPad layouts, overflow uses four direct native tabs plus a
-Plozz More destination with themed shortcut rows. Overflow destinations share
-that tab's navigation stack; Settings opens its existing sheet directly.
+On compact layouts with overflow, UIKit's More list pushes the existing tab
+stacks. Check placement before selecting a row: Search should already use its
+subpage header, and the same placement should survive the push and return.
+A pending More row selection must not push another page once the list has left
+or while it is returning. After Back settles, the same row must open again.
+More uses the same page background as Search, including the flat fill when
+Gradient Backgrounds is off, both on entry and after returning from a row.
+Settings opens its existing sheet directly.
 Returning to More stops the hidden Live TV preview, and changing the enabled
 order re-resolves the current destination. Regular-width iPad tabs remain native.
 
@@ -586,6 +593,12 @@ Runner verdict regressions use the existing host-side unittest runner:
 `python3 -m unittest discover -s tools/tests -p 'test_xcresult_summary.py'`.
 
 ## App-hosted focus integration
+
+The guide’s elapsed-time boundary test runs in the app-hosted targets: tvOS’s
+native button labels and scroll views need a scene-backed capture. It samples
+both sides of the time line for an empty row and a gap before a later listing.
+The pinned-rail fixture measures the hero through loading and the page bounds
+through native guide entry, when the category pane intentionally collapses.
 
 Episode-panel fixtures activate native window focus before reissuing their
 SwiftUI Browse entry request. Repeated window handoffs must start on Browse and
@@ -1686,8 +1699,11 @@ instead of choosing an older installed runtime. The full package matrix has a
 Run `39888935447` spent about 23 minutes on setup and compilation, then passed
 41 complete test bundles before the former 40-minute limit interrupted the
 still-progressing CoreModels bundle. The longer total budget preserves the
-runner's existing no-progress watchdog and result-finalization checks, with
-outer headroom for setup, termination, and retained diagnostic uploads.
+runner's result-finalization checks and leaves outer headroom for setup,
+termination, and retained diagnostic uploads. Cold Swift batch compilation has
+a ten-minute no-output limit. When the built test manifest starts executing,
+the silence clock resets and the three-minute test limit applies. Neither
+phase gets more time on the combined shard deadline.
 Hosted integration builds once with
 `build-for-testing`, then runs `test-without-building`, with separate build/test
 deadlines and retained build/test logs and result bundles. It uses optimized

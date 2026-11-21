@@ -38,6 +38,7 @@ final class SettingsSearchTests: XCTestCase {
             "background playback": "background-audio",
             "forward skip": "skip-forward",
             "backward skip": "skip-backward",
+            "hide player controls": "auto-hide-controls",
             "show poster titles": "card-labels",
             "show external ratings": "detail-ratings",
             "bottom of video": "subtitle-reference",
@@ -186,7 +187,9 @@ final class SettingsSearchTests: XCTestCase {
     }
 
     func testLiveSubtitleStylesReuseAnchorsWithoutOfferingDualTracks() {
-        let regular = SettingsSearchCatalog.entries.filter { $0.page == .subtitleStyle && $0.subtitlePage != .dual }
+        let regular = SettingsSearchCatalog.entries.filter {
+            $0.page == .subtitleStyle && $0.subtitlePage != .dual && $0.id != "file-ass-override"
+        }
         let live = SettingsSearchCatalog.entries.filter { $0.page == .liveSubtitleStyle }
         XCTAssertEqual(live.count, regular.count)
         for entry in regular {
@@ -197,6 +200,8 @@ final class SettingsSearchTests: XCTestCase {
             XCTAssertEqual(variant?.minimumOSVersion, entry.minimumOSVersion)
         }
         XCTAssertFalse(live.contains { $0.subtitlePage == .dual })
+        XCTAssertEqual(SettingsSearchCatalog.entry(id: "file-ass-override")?.subtitlePage, .formatting)
+        XCTAssertNil(SettingsSearchCatalog.entry(id: "live-file-ass-override"))
         XCTAssertEqual(index.results(for: "live subtitles size").first?.id, "live-subtitle-size")
         XCTAssertEqual(index.results(for: "subtitle size").first?.id, "subtitle-size")
     }
