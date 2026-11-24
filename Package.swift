@@ -58,6 +58,7 @@ let package = Package(
         .library(name: "TraktService", targets: ["TraktService"]),
         .library(name: "CoreTrackerAuth", targets: ["CoreTrackerAuth"]),
         .library(name: "WetrakrService", targets: ["WetrakrService"]),
+        .library(name: "PublicMetaDBService", targets: ["PublicMetaDBService"]),
         .library(name: "SeerService", targets: ["SeerService"]),
         .library(name: "SimklService", targets: ["SimklService"]),        .library(name: "AniListService", targets: ["AniListService"]),
         .library(name: "MALService", targets: ["MALService"]),
@@ -270,6 +271,8 @@ let package = Package(
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
+        // 7.72.1 adds threaded VC-1/WMV3 decoding through FFmpegBuild 3.18.0,
+        // retaining Plozz's playback contracts across upstream refactors.
         localASSEngine.map {
             .package(
                 path: $0,
@@ -280,7 +283,7 @@ let package = Package(
             )
         } ?? .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "d98f93de1bc05635279ab5ce7831910327452e3f",
+            revision: "5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03",
             traits: [
                 "TrueHDObjectAudio", "DTSXObjectAudio",
                 "DualLayerDolbyVision", "DolbyVisionFelCurves",
@@ -436,6 +439,10 @@ let package = Package(
             dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "CoreTrackerAuth"]
         ),
         .target(
+            name: "PublicMetaDBService",
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore"]
+        ),
+        .target(
             name: "SeerService",
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
@@ -530,7 +537,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureSettings",
-            dependencies: ["CoreModels", "CoreUI", "CoreNetworking", "CrashReporting", "FeatureProfiles", "TraktService", "WetrakrService", "SeerService", "SimklService", "AniListService", "MALService", "LastFmService"]
+            dependencies: ["CoreModels", "CoreUI", "CoreNetworking", "CrashReporting", "FeatureProfiles", "TraktService", "WetrakrService", "PublicMetaDBService", "SeerService", "SimklService", "AniListService", "MALService", "LastFmService"]
         ),
         .target(
             name: "FeatureProfiles",
@@ -890,6 +897,8 @@ let package = Package(
                 "ProviderShare",
                 "CoreSecureStore",
                 "TraktService",
+                "RatingsService",
+                "PublicMetaDBService",
                 "SeerService",
                 "FeatureSyncCloud"
             ]
@@ -945,6 +954,7 @@ let package = Package(
                 "SeerService",
                 "SimklService",
                 "WetrakrService",
+                "PublicMetaDBService",
                 "AniListService",
                 "MALService",
                 "LastFmService",
@@ -1001,6 +1011,7 @@ let package = Package(
                 "TraktService",
                 "SimklService",
                 "WetrakrService",
+                "PublicMetaDBService",
                 "AniListService",
                 "MALService",
                 "FeatureSyncSetup",
@@ -1120,12 +1131,12 @@ let package = Package(
             dependencies: ["WetrakrService", "CoreTrackerAuth", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
-            name: "SimklServiceTests",
-            dependencies: ["SimklService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
+            name: "PublicMetaDBServiceTests",
+            dependencies: ["PublicMetaDBService", "CoreModels", "CoreNetworking", "CoreSecureStore", "FeatureWatchlistCore", "TestSupportNetworking"]
         ),
         .testTarget(
-            name: "LastFmServiceTests",
-            dependencies: ["LastFmService", "TestSupportNetworking"]
+            name: "SimklServiceTests",
+            dependencies: ["SimklService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "AniListServiceTests",
@@ -1134,6 +1145,10 @@ let package = Package(
         .testTarget(
             name: "MALServiceTests",
             dependencies: ["MALService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
+        ),
+        .testTarget(
+            name: "LastFmServiceTests",
+            dependencies: ["LastFmService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "SeerServiceTests",
@@ -1193,7 +1208,7 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureSettingsTests",
-            dependencies: ["FeatureSettings", "CoreModels"]
+            dependencies: ["FeatureSettings", "CoreModels", "PublicMetaDBService", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "MediaTransportCoreTests",
